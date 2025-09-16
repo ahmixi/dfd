@@ -1,0 +1,9 @@
+{
+  "build": {
+    "env": {
+      "PNPM_FETCH_CONCURRENCY": "4",
+      "NPM_CONFIG_FETCH_RETRIES": "5",
+      "NPM_CONFIG_FETCH_RETRY_FACTOR": "2"
+    }
+  }
+}
