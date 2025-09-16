@@ -20,10 +20,22 @@ export const metadata: Metadata = {
   description:
     "Play exciting emoji-based games, collect characters, and compete for high scores in this amazing gaming platform!",
   generator: "v0.app",
-  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
-  themeColor: "#d97706",
+  // viewport and themeColor moved to their dedicated exports below to match
+  // Next.js app router metadata guidance (avoid unsupported entries here).
   manifest: "/manifest.json",
 }
+
+// Export viewport separately so Next can handle it correctly (see Next 14+)
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  // use boolean camelCase here for userScalable per recommended export shape
+  userScalable: false,
+}
+
+// Export themeColor as its own export to avoid placing it inside metadata.
+export const themeColor = '#d97706'
 
 export default function RootLayout({
   children,
