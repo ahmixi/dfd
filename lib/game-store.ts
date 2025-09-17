@@ -556,12 +556,15 @@ export const useGameStore = create<GameStore>()(
       unlockCharacter: (characterId) =>
         set((state) => {
           const character = state.characters.find((c) => c.id === characterId)
-          if (!character || state.user.coins < character.cost) return state
+          // Defensive numeric coercion in case persisted values are strings
+          const userCoins = Number(state.user.coins)
+          const charCost = character ? Number(character.cost) : Infinity
+          if (!character || userCoins < charCost) return state
 
           return {
             user: {
               ...state.user,
-              coins: state.user.coins - character.cost,
+              coins: userCoins - charCost,
               unlockedCharacters: [...state.user.unlockedCharacters, characterId],
             },
             characters: state.characters.map((c) => (c.id === characterId ? { ...c, unlocked: true } : c)),

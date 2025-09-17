@@ -186,7 +186,8 @@ export function CharacterShop() {
             {filteredCharacters.map((character) => {
               const isOwned = user.unlockedCharacters.includes(character.id)
               const isSelected = user.selectedCharacter === character.id
-              const canAfford = user.coins >= character.cost
+              // Defensive numeric comparison in case persisted values are strings
+              const canAfford = Number(user.coins) >= Number(character.cost)
               const CategoryIcon = categoryIcons[character.category]
 
               return (
@@ -198,10 +199,10 @@ export function CharacterShop() {
                 >
                   {/* Rarity Glow Effect */}
                   {character.rarity === "legendary" && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-yellow-400/20 via-transparent to-yellow-400/20 animate-pulse" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-yellow-400/20 via-transparent to-yellow-400/20 animate-pulse pointer-events-none" />
                   )}
                   {character.rarity === "epic" && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-purple-400/20 via-transparent to-purple-400/20 animate-pulse" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-purple-400/20 via-transparent to-purple-400/20 animate-pulse pointer-events-none" />
                   )}
 
                   <CardHeader className="pb-3 relative">
