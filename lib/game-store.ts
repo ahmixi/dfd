@@ -734,7 +734,18 @@ export const useGameStore = create<GameStore>()(
     }),
     {
       name: "emoji-games-storage",
-      version: 2,
+      // bump version because we're changing what's persisted
+      version: 3,
+      // Only persist long-lived state. Exclude transient UI fields so that
+      // the app won't reopen a gameplay or paused state on page load.
+      partialize: (state) => ({
+        user: state.user,
+        gameStats: state.gameStats,
+        characters: state.characters,
+        achievements: state.achievements,
+        dailyChallenges: state.dailyChallenges,
+        playerStats: state.playerStats,
+      }),
     },
   ),
 )

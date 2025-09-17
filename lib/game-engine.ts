@@ -226,6 +226,8 @@ export class GameEngine {
   private renderer: any = null
   private particleSystem: any = null
   private postProcessor: any = null
+  // Interval handle for periodic shield projectiles
+  private shieldProjectileInterval: number | null = null
   // Player sprite
   private playerImage: HTMLImageElement | null = null
   private playerImageLoaded = false
@@ -295,7 +297,11 @@ export class GameEngine {
       vy: 0,
       active: true,
       rotation: 0,
-      shieldRings: [],
+      shieldRings: [
+        { radius: 60, rotation: 0, speed: 0.02, opacity: 0, segments: 12, active: false },
+        { radius: 85, rotation: 0.5, speed: 0.03, opacity: 0, segments: 16, active: false },
+        { radius: 110, rotation: 1, speed: 0.04, opacity: 0, segments: 20, active: false }
+      ],
       shieldActivationCost: 20,
       shieldDuration: 5000,
       shieldActivationTime: 0,
@@ -350,6 +356,12 @@ export class GameEngine {
 
     this.setupEventListeners()
     this.initializeObjectPools()
+
+    // Debug: log when shield rings are present
+    try {
+      // eslint-disable-next-line no-console
+      console.debug('GameEngine initialized with shieldRings:', this.player.shieldRings.length)
+    } catch (e) {}
 
   // Removed hardcoded loading of /charcter.png. Only load the image passed as playerSprite.
 
@@ -1331,7 +1343,9 @@ export class GameEngine {
         if (this.player.shieldRings && this.player.shieldRings.some(ring => ring.active)) {
           this.player.shieldRings.forEach((ring, ringIndex) => {
             if (!ring.active) return;
-            const ringCollision = Math.abs(distance - ring.radius) < (enemy.width / 2 + 10);
+            // Increase tolerance slightly to account for coordinate rounding and dynamic enemy sizes
+            const tolerance = Math.max(16, enemy.width / 2 + 12);
+            const ringCollision = Math.abs(distance - ring.radius) < tolerance;
             if (ringCollision) {
               // Damage enemy and block
               enemy.health -= 10 * (ringIndex + 1); // Outer rings do more damage
@@ -1339,7 +1353,11 @@ export class GameEngine {
               // Optional: deactivate shield ring after hit
               // ring.active = false;
               this.createParticles(enemy.x, enemy.y, ["✨", "🛡️"]);
+                try { console.debug('shield blocked enemy', { enemyId: enemy.id, ringIndex, distance, ringRadius: ring.radius, enemyHealth: enemy.health }); } catch (e) {}
               this.playSound("shield");
+                // Add a satisfying screen shake and small particle burst on block
+                this.addScreenShake(6 + ringIndex * 2, 180);
+                this.createParticles(enemy.x, enemy.y, ["💥", "✨"]);
             }
           });
         }
@@ -1995,6 +2013,47 @@ export class GameEngine {
 
     this.ctx.fillStyle = healthGradient
     this.ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight)
+    
+    // Draw shield rings (overlayed on player)
+    this.drawShieldRings()
+  }
+
+  // Draw shield rings around player with glow/pulse when active
+  drawShieldRings() {
+    if (!this.player.shieldRings || this.player.shieldRings.length === 0) return
+    const time = Date.now()
+    const centerX = this.player.x
+    const centerY = this.player.y
+    this.player.shieldRings.forEach((ring, i) => {
+      const active = ring.active
+      const radius = ring.radius || 80
+      const opacity = Math.max(0.08, ring.opacity || 0)
+      const pulse = active ? 1 + Math.sin(time * 0.004 + i) * 0.06 : 1
+
+      // Glow layer
+      this.ctx.save()
+      this.ctx.globalCompositeOperation = 'lighter'
+      this.ctx.globalAlpha = opacity * (active ? 0.9 : 0.3)
+      this.ctx.lineWidth = 6 * (active ? 1.2 : 0.8)
+      const glowGrad = this.ctx.createRadialGradient(centerX, centerY, radius * 0.6, centerX, centerY, radius * 1.6)
+      glowGrad.addColorStop(0, `rgba(59,130,246,${0.35 * (active ? 1 : 0.4)})`)
+      glowGrad.addColorStop(1, 'rgba(59,130,246,0)')
+      this.ctx.strokeStyle = glowGrad
+      this.ctx.beginPath()
+      this.ctx.arc(centerX, centerY, radius * pulse, 0, Math.PI * 2)
+      this.ctx.stroke()
+      this.ctx.restore()
+
+      // Ring outline
+      this.ctx.save()
+      this.ctx.globalAlpha = opacity * (active ? 1 : 0.4)
+      this.ctx.lineWidth = 3
+      this.ctx.strokeStyle = `rgba(96,165,250,${0.9 * (active ? 1 : 0.25)})`
+      this.ctx.beginPath()
+      this.ctx.arc(centerX, centerY, radius * pulse, 0, Math.PI * 2)
+      this.ctx.stroke()
+      this.ctx.restore()
+    })
   }
 
   private drawEnemies() {
@@ -2307,17 +2366,70 @@ export class GameEngine {
 
   // Activate shield rings if enough energy
   activateShield() {
-    if (this.player.energy >= this.player.shieldActivationCost && this.player.shieldRings.length > 0) {
-      this.player.shieldRings = this.player.shieldRings.map((ring, index) => ({
-        ...ring,
-        active: true,
-        opacity: 1,
-        speed: 0.02 + (index * 0.01),
-        radius: 60 + (index * 25),
-      }));
-      this.player.energy -= this.player.shieldActivationCost;
-      this.player.shieldActivationTime = Date.now();
-      this.playSound("shield");
+    // Idempotent activation: if already active, refresh duration and return
+    if (!this.player.shieldRings || this.player.shieldRings.length === 0) {
+      this.player.shieldRings = [
+        { radius: 60, rotation: 0, speed: 0.02, opacity: 0, segments: 12, active: false },
+        { radius: 85, rotation: 0.5, speed: 0.03, opacity: 0, segments: 16, active: false },
+        { radius: 110, rotation: 1, speed: 0.04, opacity: 0, segments: 20, active: false }
+      ];
+    }
+
+    // If not enough energy, do nothing
+    if (this.player.energy < this.player.shieldActivationCost) return
+
+    const wasActive = this.player.shieldRings.some(r => r.active)
+
+    // Deduct energy once per activation (if not already active)
+    if (!wasActive) {
+      this.player.energy = Math.max(0, this.player.energy - this.player.shieldActivationCost)
+    }
+
+    // Activate / refresh rings
+    this.player.shieldRings = this.player.shieldRings.map((ring, index) => ({
+      ...ring,
+      active: true,
+      opacity: 1,
+      speed: 0.02 + (index * 0.01),
+      radius: 60 + (index * 25),
+    }));
+
+    this.player.shieldActivationTime = Date.now()
+    try { console.debug('GameEngine.activateShield: activated/refreshed rings', this.player.shieldRings); } catch (e) {}
+    this.playSound('shield')
+
+    // Start periodic shield projectiles if not already started
+    if (!this.shieldProjectileInterval) {
+      // use window.setInterval and store numeric id so we can clear it later
+      this.shieldProjectileInterval = window.setInterval(() => {
+        // only spawn projectiles while shield rings are active
+        if (!this.player.shieldRings.some(r => r.active)) return
+        const projectileCount = 6
+        for (let i = 0; i < projectileCount; i++) {
+          const angle = (i / projectileCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.2
+          this.projectiles.push({
+            x: this.player.x + Math.cos(angle) * 50,
+            y: this.player.y + Math.sin(angle) * 50,
+            width: 12,
+            height: 12,
+            vx: Math.cos(angle) * 260,
+            vy: Math.sin(angle) * 260,
+            active: true,
+            rotation: angle,
+            scale: 1,
+            alpha: 1,
+            zIndex: 6,
+            id: `shield_projectile_${Date.now()}_${Math.random()}`,
+            createdAt: Date.now(),
+            damage: 12,
+            speed: 260,
+            homing: false,
+            piercing: true,
+            trail: [],
+            glowColor: '#3B82F6'
+          })
+        }
+      }, 1400) as unknown as number
     }
   }
 
@@ -2335,6 +2447,13 @@ export class GameEngine {
       }));
       this.player.shieldActivationTime = 0;
       this.playSound("shield_off");
+      // Clear periodic shield projectile spawner if running
+      try {
+        if (this.shieldProjectileInterval) {
+          clearInterval(this.shieldProjectileInterval as any)
+          this.shieldProjectileInterval = null
+        }
+      } catch (e) {}
     } else {
       // Rotate and fade shield rings
       this.player.shieldRings = this.player.shieldRings.map((ring, index) => ({

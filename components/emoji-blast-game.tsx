@@ -308,234 +308,7 @@ export function EmojiBlastGame() {
     prevGameStats.current = gameStats
   }, [gameStats, showSpeech, gameState])
 
-  // Update shield rings and handle protection
-  useEffect(() => {
-    if (!gameEngineRef.current) return
-
-    const interval = setInterval(() => {
-      const engine = gameEngineRef.current;
-      if (!engine) return;
-
-      // Update shield rings
-      if (engine.player.shieldRings.some(ring => ring.active)) {
-        const currentTime = Date.now();
-        const elapsedTime = currentTime - engine.player.shieldActivationTime;
-        
-        if (elapsedTime >= engine.player.shieldDuration) {
-          // Deactivate shield with fade out effect
-          engine.player.shieldRings = engine.player.shieldRings.map(ring => ({
-            ...ring,
-            active: false,
-            opacity: 0
-          }));
-
-          // Create deactivation particles
-          const deactivationParticles = 16;
-          for (let i = 0; i < deactivationParticles; i++) {
-            const angle = (i / deactivationParticles) * Math.PI * 2;
-            const radius = 80;
-            engine.particles.push({
-              x: engine.player.x + Math.cos(angle) * radius,
-              y: engine.player.y + Math.sin(angle) * radius,
-              width: 15,
-              height: 15,
-              vx: Math.cos(angle) * 2,
-              vy: Math.sin(angle) * 2,
-              active: true,
-              rotation: angle,
-              scale: 1,
-              alpha: 0.7,
-              zIndex: 5,
-              id: `shield_deactivate_${Date.now()}_${i}`,
-              createdAt: Date.now(),
-              color: '#60A5FA',
-              size: 12,
-              life: 1000,
-              maxLife: 1000,
-              drag: 0.96,
-              type: 'spark',
-              emoji: '',
-              rotationSpeed: 0.2,
-              gradient: ['#60A5FA', '#93C5FD']
-            });
-          }
-          // Clear numeric shield meter when rings deactivate
-          try { engine.player.shield = 0 } catch (e) {}
-        } else {
-          // Rotate and update shield rings
-          engine.player.shieldRings = engine.player.shieldRings.map((ring, index) => ({
-            ...ring,
-            rotation: ring.rotation + ring.speed,
-            opacity: Math.min(1, 1 - (elapsedTime / engine.player.shieldDuration))
-          }));
-
-          // Check for enemy collisions with shield rings
-          engine.enemies.forEach(enemy => {
-            if (!enemy.active) return;
-
-            // Calculate distance from enemy to player
-            const dx = enemy.x - engine.player.x;
-            const dy = enemy.y - engine.player.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-
-            // Check collision with each shield ring
-            engine.player.shieldRings.forEach((ring, ringIndex) => {
-              if (!ring.active) return;
-
-              const ringCollision = Math.abs(distance - ring.radius) < 20;
-              if (ringCollision) {
-                // Immediate eliminate enemies that touch the shield ring (proactive field)
-                enemy.health = 0;
-
-                // Create impact particles
-                const impactParticles = 8;
-                const impactAngle = Math.atan2(dy, dx);
-                for (let i = 0; i < impactParticles; i++) {
-                  const particleAngle = impactAngle + (Math.random() - 0.5);
-                  engine.particles.push({
-                    x: enemy.x,
-                    y: enemy.y,
-                    width: 12,
-                    height: 12,
-                    vx: Math.cos(particleAngle) * 5,
-                    vy: Math.sin(particleAngle) * 5,
-                    active: true,
-                    rotation: particleAngle,
-                    scale: 1,
-                    alpha: 1,
-                    zIndex: 5,
-                    id: `shield_impact_${Date.now()}_${i}`,
-                    createdAt: Date.now(),
-                    color: '#3B82F6',
-                    size: 10,
-                    life: 500,
-                    maxLife: 500,
-                    drag: 0.95,
-                    type: 'spark',
-                    emoji: '',
-                    rotationSpeed: 0.3,
-                    gradient: ['#3B82F6', '#60A5FA']
-                  });
-                }
-
-                // Knockback effect
-                const knockbackForce = 300;
-                enemy.vx = (dx / distance) * knockbackForce;
-                enemy.vy = (dy / distance) * knockbackForce;
-
-                // Visual feedback
-                engine.addScreenShake(3, 100);
-                triggerHaptic('medium');
-
-                if (enemy.health <= 0) {
-                  enemy.active = false;
-                  engine.score += 50; // Bonus points for shield kills
-                  engine.combo++;
-
-                  // Spawn shattering fragments (non-emoji visual shards)
-                  const shardCount = 12
-                  for (let s = 0; s < shardCount; s++) {
-                    const a = Math.random() * Math.PI * 2
-                    const speed = 3 + Math.random() * 8
-                    engine.particles.push({
-                      x: enemy.x + (Math.random() - 0.5) * 8,
-                      y: enemy.y + (Math.random() - 0.5) * 8,
-                      width: 8 + Math.random() * 8,
-                      height: 8 + Math.random() * 8,
-                      vx: Math.cos(a) * speed,
-                      vy: Math.sin(a) * speed - (Math.random() * 2),
-                      active: true,
-                      rotation: a,
-                      scale: 1,
-                      alpha: 1,
-                      zIndex: 7,
-                      id: `shard_frag_${Date.now()}_${s}`,
-                      createdAt: Date.now(),
-                      color: ['#F97316','#FB7185','#F59E0B','#F43F5E','#FDE68A'][Math.floor(Math.random()*5)],
-                      size: 6 + Math.random() * 10,
-                      life: 700 + Math.random() * 800,
-                      maxLife: 700 + Math.random() * 800,
-                      drag: 0.95,
-                      type: 'trail',
-                      emoji: '', // render as a colored fragment (renderer should draw shapes when emoji is empty)
-                      rotationSpeed: (Math.random() - 0.5) * 1.2,
-                    })
-                  }
-
-                  // Floating score text (local UI overlay)
-                  const fhId = `fh_${Date.now()}_${Math.floor(Math.random()*1000)}`
-                  setFloatingHits(prev => [...prev, { id: fhId, x: enemy.x, y: enemy.y, text: '+50' }])
-
-                  // Brief screen flash
-                  const flashId = `flash_${Date.now()}`
-                  setFlash({ alpha: 0.6, id: flashId })
-                  setTimeout(() => {
-                    // fade out flash
-                    setFlash(null)
-                  }, 120)
-
-                  // Micro slow-motion if engine supports timeScale
-                  try {
-                    if ((engine as any).timeScale !== undefined) {
-                      const prevScale = (engine as any).timeScale
-                      ;(engine as any).timeScale = Math.max(0.35, prevScale * 0.4)
-                      setTimeout(() => { if ((engine as any)) (engine as any).timeScale = prevScale }, 90)
-                    }
-                  } catch (e) {
-                    // ignore if not supported
-                  }
-
-                  // Optional sound feedback
-                  if (soundEnabled) {
-                    try {
-                      const audio = new Audio('/pop-sound.mp3')
-                      audio.volume = 0.18
-                      audio.play().catch(() => {})
-                    } catch (e) {}
-                  }
-                }
-              }
-            });
-          });
-
-          // Emit shield particles occasionally
-          if (Math.random() < 0.1) {
-            const randomAngle = Math.random() * Math.PI * 2;
-            const randomRing = engine.player.shieldRings[
-              Math.floor(Math.random() * engine.player.shieldRings.length)
-            ];
-            
-            engine.particles.push({
-              x: engine.player.x + Math.cos(randomAngle) * randomRing.radius,
-              y: engine.player.y + Math.sin(randomAngle) * randomRing.radius,
-              width: 8,
-              height: 8,
-              vx: Math.cos(randomAngle) * 1,
-              vy: Math.sin(randomAngle) * 1,
-              active: true,
-              rotation: randomAngle,
-              scale: 1,
-              alpha: 0.6,
-              zIndex: 4,
-              id: `shield_ambient_${Date.now()}`,
-              createdAt: Date.now(),
-              color: '#60A5FA',
-              size: 6,
-              life: 800,
-              maxLife: 800,
-              drag: 0.99,
-              type: 'spark',
-              emoji: '',
-              rotationSpeed: 0.1,
-              gradient: ['#60A5FA', '#93C5FD']
-            });
-          }
-        }
-      }
-    }, 16); // 60fps updates
-
-    return () => clearInterval(interval);
-  }, [triggerHaptic]);
+  // Shield is now managed by GameEngine.activateShield() and GameEngine.updateShieldRings()
 
   
 
@@ -944,111 +717,8 @@ export function EmojiBlastGame() {
 
   const activateShield = useCallback(() => {
     if (!gameEngineRef.current) return
-
-    const engine = gameEngineRef.current;
-    if (engine.player.energy >= engine.player.shieldActivationCost) {
-      // Activate all shield rings with different speeds and effects
-      engine.player.shieldRings = engine.player.shieldRings.map((ring, index) => ({
-        ...ring,
-        active: true,
-        opacity: 1,
-        speed: 0.02 + (index * 0.01), // Different speeds for each ring
-        radius: 60 + (index * 25), // Different radii for each ring
-      }));
-      
-  // Deduct energy cost safely and record previous activation time
-  engine.player.energy = Math.max(0, engine.player.energy - engine.player.shieldActivationCost);
-  const prevShieldActivation = engine.player.shieldActivationTime || 0;
-  engine.player.shieldActivationTime = Date.now();
-      
-      // Create shield activation wave effect
-      const createShieldWave = (radius: number, particleCount: number) => {
-        for (let i = 0; i < particleCount; i++) {
-          const angle = (i / particleCount) * Math.PI * 2;
-          const x = engine.player.x + Math.cos(angle) * radius;
-          const y = engine.player.y + Math.sin(angle) * radius;
-          
-          engine.particles.push({
-            x,
-            y,
-            width: 12,
-            height: 12,
-            vx: Math.cos(angle) * 3,
-            vy: Math.sin(angle) * 3,
-            active: true,
-            rotation: angle,
-            scale: 1,
-            alpha: 1,
-            zIndex: 5,
-            id: `shield_particle_${Date.now()}_${i}`,
-            createdAt: Date.now(),
-            color: '#60A5FA',
-            size: 10,
-            life: 1500,
-            maxLife: 1500,
-            drag: 0.98,
-            type: 'spark',
-            emoji: '',
-            rotationSpeed: 0.1,
-            gradient: ['#60A5FA', '#93C5FD', '#3B82F6']
-          });
-        }
-      };
-
-      // Create multiple waves with different radii
-      createShieldWave(60, 24);
-      setTimeout(() => createShieldWave(85, 32), 100);
-      setTimeout(() => createShieldWave(110, 40), 200);
-
-      // Add offensive capability - create shield projectiles
-      const createShieldProjectiles = () => {
-        const projectileCount = 8;
-        for (let i = 0; i < projectileCount; i++) {
-          const angle = (i / projectileCount) * Math.PI * 2;
-          engine.projectiles.push({
-            x: engine.player.x + Math.cos(angle) * 50,
-            y: engine.player.y + Math.sin(angle) * 50,
-            width: 15,
-            height: 15,
-            vx: Math.cos(angle) * 300,
-            vy: Math.sin(angle) * 300,
-            active: true,
-            rotation: angle,
-            scale: 1,
-            alpha: 1,
-            zIndex: 6,
-            id: `shield_projectile_${Date.now()}_${i}`,
-            createdAt: Date.now(),
-            damage: 20,
-            speed: 300,
-            homing: false,
-            piercing: true,
-            trail: [],
-            glowColor: '#3B82F6'
-          });
-        }
-      };
-
-      // Create shield projectiles periodically while shield is active
-      const projectileInterval = setInterval(() => {
-        if (engine.player.shieldRings.some(ring => ring.active)) {
-          createShieldProjectiles();
-        } else {
-          clearInterval(projectileInterval);
-        }
-      }, 2000);
-
-      // Enhanced visual and audio feedback
-      triggerHaptic('heavy');
-      // Run initial activation effects only if shield was not active before
-      if (!prevShieldActivation) {
-        engine.addScreenShake(5, 300);
-      }
-
-      // Return cleanup function
-      return () => clearInterval(projectileInterval);
-    }
-  }, [triggerHaptic]);
+    try { gameEngineRef.current.activateShield() } catch (e) {}
+  }, [])
 
   // Keyboard shortcut for shield (Q) - registered after activateShield to avoid TDZ
   useEffect(() => {
@@ -1058,8 +728,23 @@ export function EmojiBlastGame() {
       }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+    }
   }, [activateShield])
+
+  // Debug overlay state (poll engine for shield status)
+  const [debugShield, setDebugShield] = useState<{active: boolean; timeLeft: number; energy: number; rings: number}>({ active: false, timeLeft: 0, energy: 0, rings: 0 })
+  useEffect(() => {
+    const t = setInterval(() => {
+      const engine = gameEngineRef.current
+      if (!engine || !engine.player) return
+      const active = engine.player.shieldRings?.some((r: any) => r.active) || false
+      const timeLeft = active ? Math.max(0, (engine.player.shieldDuration || 0) - (Date.now() - (engine.player.shieldActivationTime || 0))) : 0
+      setDebugShield({ active, timeLeft, energy: engine.player.energy || 0, rings: engine.player.shieldRings?.length || 0 })
+    }, 250)
+    return () => clearInterval(t)
+  }, [])
 
   // Update overlay bubble position to follow player mouth when speech is active
   useEffect(() => {
@@ -1824,6 +1509,15 @@ export function EmojiBlastGame() {
         </>
       )}
 
+      {/* Small debug overlay for shield (only visible during dev/testing) */}
+      <div style={{ position: 'fixed', right: 12, bottom: 12, zIndex: 9999, background: 'rgba(0,0,0,0.55)', color: '#fff', padding: '8px 10px', borderRadius: 8, fontSize: 12, pointerEvents: 'none' }}>
+        <div style={{ fontWeight: 600, marginBottom: 4 }}>Shield Debug</div>
+        <div>Active: {debugShield.active ? 'yes' : 'no'}</div>
+        <div>Rings: {debugShield.rings}</div>
+        <div>Energy: {Math.floor(debugShield.energy)}</div>
+        <div>Time Left: {Math.ceil(debugShield.timeLeft / 1000)}s</div>
+      </div>
+
       {/* Desktop shield indicator/button */}
       <div className="absolute top-32 right-6 z-20 hidden md:flex flex-col items-end gap-2">
         {/* Shield duration ring / percent */}
@@ -1913,13 +1607,14 @@ export function EmojiBlastGame() {
       {shieldActive && (
         <div
           aria-hidden
-          className="pointer-events-none fixed z-40"
+          className="pointer-events-none absolute z-40"
           style={{
-            left: Math.round(playerScreen.left) - 150,
-            top: Math.round(playerScreen.top) - 150,
-            width: 300,
-            height: 300,
-            transform: 'translate(0, 0)'
+            // Compute overlay size from the largest shield ring radius and clamp to viewport
+            left: Math.round(playerScreen.left),
+            top: Math.round(playerScreen.top),
+            transform: 'translate(-50%, -50%)',
+            width: Math.min(window.innerWidth * 0.9, (Math.max(...(engine?.player?.shieldRings || [{ radius: 90 }]).map((r: any) => r.radius || 90)) * 2) + 40),
+            height: Math.min(window.innerHeight * 0.9, (Math.max(...(engine?.player?.shieldRings || [{ radius: 90 }]).map((r: any) => r.radius || 90)) * 2) + 40),
           }}
         >
           {(engine?.player?.shieldRings || [{ radius: 90 }]).map((ring: any, i: number) => {
@@ -2427,9 +2122,12 @@ export function EmojiBlastGame() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
+            // container-bound overlay so it follows the game canvas/container
             className="absolute inset-0 flex items-center justify-center bg-black/30 backdrop-blur-sm p-4 z-30"
           >
-            {renderGameMenu()}
+            <div className="w-full max-w-[min(95vw,900px)]">
+              {renderGameMenu()}
+            </div>
           </motion.div>
       )}
 
@@ -2442,7 +2140,9 @@ export function EmojiBlastGame() {
             transition={{ duration: 0.3 }}
             className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 z-30"
           >
-            {renderGameOver()}
+            <div className="w-full max-w-[min(96vw,1000px)] max-h-[calc(100vh-120px)] overflow-auto">
+              {renderGameOver()}
+            </div>
           </motion.div>
       )}
 
@@ -2453,29 +2153,30 @@ export function EmojiBlastGame() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-30"
+            className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-30 p-4"
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ duration: 0.3, type: "spring" }}
+              className="w-full max-w-[min(92vw,720px)]"
             >
               <Card className="bg-gradient-to-br from-slate-900/95 to-purple-900/95 border-purple-500/30 backdrop-blur-xl shadow-2xl">
-            <CardContent className="p-8 text-center">
+            <CardContent className="p-6 md:p-8 text-center overflow-auto">
                   <motion.div
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ delay: 0.2, duration: 0.5, type: "spring" }}
-                    className="text-6xl mb-6"
+                    className="text-6xl mb-4 md:mb-6"
                   >
                     ⏸️
                   </motion.div>
-                  <h3 className="text-3xl font-bold mb-6 text-white">Game Paused</h3>
-                  <p className="text-slate-300 mb-8">Take a break or continue your epic battle!</p>
-                  <div className="flex gap-4 justify-center">
+                  <h3 className="text-2xl md:text-3xl font-bold mb-4 text-white">Game Paused</h3>
+                  <p className="text-slate-300 mb-6">Take a break or continue your epic battle!</p>
+                  <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button
                 onClick={pauseGame}
-                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 h-12 px-8"
+                      className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 h-12 px-6 sm:px-8 w-full sm:w-auto"
               >
                       <Play className="h-5 w-5 mr-2" />
                 Resume
