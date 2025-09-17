@@ -41,7 +41,12 @@ import { useSpeech } from "@/hooks/use-speech"
 export function EmojiBlastGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const gameEngineRef = useRef<GameEngine | null>(null)
-  const [gameState, setGameState] = useState<"menu" | "playing" | "paused" | "gameOver" | "settings">("menu")
+  const [gameStatus, setGameStatus] = useState<"menu" | "playing" | "paused" | "gameOver" | "settings">("menu")
+  const [bombBurstState, setBombBurstState] = useState({ 
+    bombBurstAvailable: true,
+    bombBurstCooldown: 30000, // 30 seconds
+    lastBombBurstTime: 0
+  })
   interface GameStats {
     score: number
     level: number
@@ -234,7 +239,7 @@ export function EmojiBlastGame() {
   // Show quick quips based on gameplay deltas (score, health, enemies)
   useEffect(() => {
     // Only show speech during active gameplay
-    if (gameState !== 'playing') {
+  if (gameStatus !== 'playing') {
       prevGameStats.current = gameStats
       return
     }
@@ -306,7 +311,7 @@ export function EmojiBlastGame() {
     }
 
     prevGameStats.current = gameStats
-  }, [gameStats, showSpeech, gameState])
+  }, [gameStats, showSpeech, gameStatus])
 
   // Shield is now managed by GameEngine.activateShield() and GameEngine.updateShieldRings()
 
@@ -467,22 +472,7 @@ export function EmojiBlastGame() {
               gameEngineRef.current.player.vx = 400
               triggerHaptic('heavy')
             } else if (degrees > 135 && degrees < 225) {
-              // Left swipe - shield
-              try {
-                const p = gameEngineRef.current?.player
-                if (p) {
-                  p.shield = Math.min(p.maxShield || 0, (p.shield || 0) + 20)
-                  triggerHaptic('medium')
-
-                  // Auto-activate when fully charged
-                  if ((p.shield || 0) >= (p.maxShield || 0)) {
-                    setTimeout(() => { try { activateShield() } catch (e) {} }, 80)
-                    p.shield = 0
-                  }
-                }
-              } catch (e) {
-                // ignore if engine/player not available
-              }
+              // Left swipe - shield (debug code removed)
             } else if (degrees > 45 && degrees < 135) {
               // Down swipe - special bomb
               if (gameEngineRef.current.player.energy >= 50) {
@@ -574,7 +564,7 @@ export function EmojiBlastGame() {
 
   // Auto-shoot functionality for mobile
   useEffect(() => {
-  if (!autoShoot || !gameEngineRef.current || gameState !== 'playing') return
+  if (!autoShoot || !gameEngineRef.current || gameStatus !== 'playing') return
 
     const autoShootInterval = setInterval(() => {
       if (gameEngineRef.current && gameEngineRef.current.player.energy > 10) {
@@ -584,7 +574,7 @@ export function EmojiBlastGame() {
     }, 300) // Auto-shoot every 300ms
 
     return () => clearInterval(autoShootInterval)
-  }, [autoShoot, gameState])
+  }, [autoShoot, gameStatus])
 
 
   useEffect(() => {
@@ -623,7 +613,7 @@ export function EmojiBlastGame() {
         checkAchievements(engine)
 
         // Check game over
-        if (engine.player.health <= 0 && gameState === "playing") {
+  if (engine.player.health <= 0 && gameStatus === "playing") {
           handleGameOver()
         }
       }
@@ -631,7 +621,7 @@ export function EmojiBlastGame() {
 
     const interval = setInterval(updateStats, 16) // 60fps updates
     return () => clearInterval(interval)
-  }, [gameState])
+  }, [gameStatus])
 
   const checkAchievements = useCallback((engine: GameEngine) => {
     const newAchievements: string[] = []
@@ -695,7 +685,7 @@ export function EmojiBlastGame() {
 
     gameEngineRef.current.reset()
     gameEngineRef.current.start()
-    setGameState("playing")
+  setGameStatus("playing")
     triggerHaptic('medium')
   }
 
@@ -703,7 +693,7 @@ export function EmojiBlastGame() {
     if (!gameEngineRef.current) return
 
     gameEngineRef.current.pause()
-    setGameState(gameEngineRef.current.isPaused ? "paused" : "playing")
+  setGameStatus(gameEngineRef.current.isPaused ? "paused" : "playing")
     triggerHaptic('light')
   }
 
@@ -712,7 +702,7 @@ export function EmojiBlastGame() {
 
     gameEngineRef.current.stop()
     gameEngineRef.current.reset()
-    setGameState("menu")
+  setGameStatus("menu")
   }
 
   const activateShield = useCallback(() => {
@@ -907,7 +897,7 @@ export function EmojiBlastGame() {
       setTimeout(() => setAchievementNotifications(prev => prev.filter(n => n.id !== notif.id)), 3000)
     }
 
-    setGameState("gameOver")
+  setGameStatus("gameOver")
   }
 
 
@@ -1518,70 +1508,33 @@ export function EmojiBlastGame() {
         <div>Time Left: {Math.ceil(debugShield.timeLeft / 1000)}s</div>
       </div>
 
-      {/* Desktop shield indicator/button */}
-      <div className="absolute top-32 right-6 z-20 hidden md:flex flex-col items-end gap-2">
-        {/* Shield duration ring / percent */}
-        <div className="bg-black/30 backdrop-blur-sm rounded-2xl p-2 border border-blue-500/20 w-44">
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-blue-300" />
-            <div className="flex-1">
-              <div className="text-xs text-white/80">Shield</div>
-              <Progress value={shieldActive ? shieldPercent * 100 : 0} className="h-2 mt-1 bg-blue-900/40" />
-            </div>
-            <button
-              onClick={() => { try { activateShield() } catch (e) {} }}
-              className="ml-2 bg-blue-600 hover:bg-blue-500 text-white rounded-full p-2 w-9 h-9 flex items-center justify-center"
-              title="Activate Shield (Q)"
-            >
-              <Shield className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
+      {/* Desktop top-right indicator removed to avoid duplicate UI shield visuals */}
 
       {/* Shield Controls */}
-      <div className={cn(
-        "fixed z-20",
-        isMobile ? "bottom-32 right-4" : "bottom-24 right-8"
-      )}>
+      {/* Shield Controls (desktop only) */}
+      {!isMobile && (
         <div className={cn(
-          "relative group",
-          gameStats.shieldRings.some(ring => ring.active) && "animate-pulse"
+          "fixed z-20 bottom-24 right-8",
         )}>
-          <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg blur opacity-50 group-hover:opacity-75 transition duration-200" />
-          <Button
-            variant="ghost"
-            size={isMobile ? "default" : "lg"}
-            onClick={activateShield}
-            disabled={gameStats.energy < gameStats.shieldActivationCost}
-            className={cn(
-              "relative flex flex-col items-center gap-2 p-4 bg-black/50 backdrop-blur-sm border-2",
-              gameStats.energy >= gameStats.shieldActivationCost 
-                ? "border-blue-500/50 hover:border-blue-400 text-blue-400 hover:text-blue-300" 
-                : "border-gray-700 text-gray-500",
-              gameStats.shieldRings.some(ring => ring.active) && "border-cyan-400/70"
-            )}
-          >
-            <div className="relative">
-              <Shield className={cn(
-                "w-8 h-8 md:w-10 md:h-10",
-                gameStats.shieldRings.some(ring => ring.active) && "animate-spin-slow"
-              )} />
-              {gameStats.shieldRings.some(ring => ring.active) && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-full h-full rounded-full bg-blue-500/20 animate-ping" />
-                </div>
+          <div>
+            <Button
+              variant="ghost"
+              size="lg"
+              onClick={activateShield}
+              disabled={gameStats.energy < gameStats.shieldActivationCost}
+              className={cn(
+                "relative flex flex-col items-center gap-2 p-3 bg-black/50 backdrop-blur-sm border rounded-lg",
+                gameStats.energy >= gameStats.shieldActivationCost 
+                  ? "border-blue-500/50 text-blue-400" 
+                  : "border-gray-700 text-gray-500",
               )}
-            </div>
-            <div className="text-xs md:text-sm font-medium text-center">
-              Shield
-              <div className="text-[10px] md:text-xs opacity-80">
-                {Math.floor(gameStats.shieldActivationCost)} Energy
-              </div>
-            </div>
-          </Button>
+            >
+              <Shield className="w-8 h-8" />
+              <div className="text-xs font-medium text-center">Shield</div>
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Desktop Controls */}
       <div className="absolute bottom-4 left-4 hidden md:block z-20">
@@ -1603,60 +1556,7 @@ export function EmojiBlastGame() {
           {gameStats.fps} FPS
         </div>
       </div>
-      {/* Persistent shield overlay (follows player) */}
-      {shieldActive && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute z-40"
-          style={{
-            // Compute overlay size from the largest shield ring radius and clamp to viewport
-            left: Math.round(playerScreen.left),
-            top: Math.round(playerScreen.top),
-            transform: 'translate(-50%, -50%)',
-            width: Math.min(window.innerWidth * 0.9, (Math.max(...(engine?.player?.shieldRings || [{ radius: 90 }]).map((r: any) => r.radius || 90)) * 2) + 40),
-            height: Math.min(window.innerHeight * 0.9, (Math.max(...(engine?.player?.shieldRings || [{ radius: 90 }]).map((r: any) => r.radius || 90)) * 2) + 40),
-          }}
-        >
-          {(engine?.player?.shieldRings || [{ radius: 90 }]).map((ring: any, i: number) => {
-            const size = (ring.radius || 90) * 2
-            const opacity = ring.active ? 0.9 : 0.18
-            const scale = 0.9 + (i * 0.08)
-            return (
-              <div
-                key={`shield_overlay_${i}`}
-                className={cn('absolute rounded-full', ring.active ? 'animate-pulse' : '')}
-                style={{
-                  left: '50%',
-                  top: '50%',
-                  width: size,
-                  height: size,
-                  marginLeft: -size / 2,
-                  marginTop: -size / 2,
-                  border: `3px solid rgba(96,165,250,${opacity})`,
-                  boxShadow: `0 0 ${12 + i * 6}px rgba(96,165,250,${0.25 + i * 0.1})`,
-                  transform: `scale(${scale}) rotate(${(ring.rotation || 0)}rad)`,
-                  opacity: Math.max(0.12, shieldPercent),
-                }}
-              />
-            )
-          })}
-
-          <div
-            className="absolute rounded-full"
-            style={{
-              left: '50%',
-              top: '50%',
-              width: 48,
-              height: 48,
-              marginLeft: -24,
-              marginTop: -24,
-              background: 'radial-gradient(circle at 30% 30%, rgba(96,165,250,0.9), rgba(59,130,246,0.25))',
-              filter: 'blur(6px)',
-              opacity: Math.max(0.35, shieldPercent)
-            }}
-          />
-        </div>
-      )}
+      {/* Engine draws shield rings on the canvas; removed duplicate DOM overlay */}
     </>
   )
   }
@@ -2033,7 +1933,7 @@ export function EmojiBlastGame() {
         aria-describedby="game-description"
       />
       {/* Character Speech Bubble (meme quips) */}
-      {speechCurrent && gameState === 'playing' && (
+  {speechCurrent && gameStatus === 'playing' && (
         (() => {
           // compute bubble position anchored to player's mouth
           const canvas = canvasRef.current
@@ -2111,11 +2011,11 @@ export function EmojiBlastGame() {
       )}
 
       {/* Modern UI overlay */}
-      {(gameState === "playing" || gameState === "paused") && renderModernGameUI()}
+  {(gameStatus === "playing" || gameStatus === "paused") && renderModernGameUI()}
 
       {/* Game State Overlays */}
       <AnimatePresence mode="wait">
-      {gameState === "menu" && (
+  {gameStatus === "menu" && (
           <motion.div
             key="menu"
             initial={{ opacity: 0 }}
@@ -2131,7 +2031,7 @@ export function EmojiBlastGame() {
           </motion.div>
       )}
 
-      {gameState === "gameOver" && (
+  {gameStatus === "gameOver" && (
           <motion.div
             key="gameOver"
             initial={{ opacity: 0 }}
@@ -2146,7 +2046,7 @@ export function EmojiBlastGame() {
           </motion.div>
       )}
 
-      {gameState === "paused" && (
+  {gameStatus === "paused" && (
           <motion.div
             key="paused"
             initial={{ opacity: 0 }}
@@ -2196,6 +2096,41 @@ export function EmojiBlastGame() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Bomb Burst Button */}
+      {gameStatus === "playing" && (
+        <div className="fixed bottom-24 right-4 flex flex-col gap-2 z-40">
+          <Button
+            variant="destructive"
+            size="lg"
+            className={cn(
+              "rounded-full w-16 h-16 p-0 relative overflow-hidden",
+              !bombBurstState.bombBurstAvailable && "opacity-50 cursor-not-allowed"
+            )}
+            onClick={() => {
+              if (gameEngineRef.current) {
+                const canvas = canvasRef.current
+                if (canvas) {
+                  const centerX = canvas.width / 2
+                  const centerY = canvas.height / 2
+                  // TODO: Fix access to particleSystem and destroyVisibleEnemies
+                  // gameEngineRef.current.particleSystem.createBombBurstExplosion(centerX, centerY, 2)
+                  // gameEngineRef.current.destroyVisibleEnemies()
+                }
+              }
+            }}
+          >
+            <Bomb className="w-8 h-8" />
+            <div 
+              className="absolute bottom-0 left-0 w-full bg-black/50"
+              style={{ 
+                height: bombBurstState.bombBurstAvailable ? "0%" : "100%",
+                transition: "height 100ms linear"
+              }}
+            />
+          </Button>
+        </div>
+      )}
 
       {/* Settings Modal */}
       <AnimatePresence>

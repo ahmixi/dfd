@@ -110,4 +110,32 @@ export class ParticleSystem {
     this.geometry.attributes.color.needsUpdate = true;
     this.geometry.attributes.size.needsUpdate = true;
   }
+
+  // Add a trail particle for a game object
+  addTrail(gameObject: { x: number; y: number; z?: number }, options: Partial<ParticleOptions> = {}) {
+    this.addParticle({
+      position: new THREE.Vector3(gameObject.x, gameObject.y, gameObject.z ?? 0),
+      velocity: new THREE.Vector3(0, 0, 0),
+      color: options.color || '#ffffff',
+      size: options.size || 2,
+      life: options.life || 500,
+      decay: options.decay || 1
+    });
+  }
+
+  // Add an explosion effect at a position
+  addExplosion(x: number, y: number, options: Partial<ParticleOptions> = {}) {
+    const count = options.decay || 10;
+    for (let i = 0; i < count; i++) {
+      const angle = (Math.PI * 2 * i) / count;
+      this.addParticle({
+        position: new THREE.Vector3(x, y, 0),
+        velocity: new THREE.Vector3(Math.cos(angle) * 2, Math.sin(angle) * 2, 0),
+        color: options.color || '#ff4444',
+        size: options.size || 4,
+        life: options.life || 500,
+        decay: options.decay || 1
+      });
+    }
+  }
 }

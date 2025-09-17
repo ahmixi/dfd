@@ -1,0 +1,140 @@
+export interface Particle extends GameObject {
+  color: string
+  size: number
+  life: number
+  maxLife: number
+  drag: number
+  type: 'circle' | 'spark' | 'trail' | 'explosion'
+  gradient?: string[]
+  emoji: string
+  rotationSpeed: number
+}
+
+export interface CameraEffect {
+  type: 'shake' | 'zoom' | 'flash'
+  intensity: number
+  duration: number
+  currentTime: number
+  startValue: number
+  endValue: number
+}
+
+export interface GameObject {
+  x: number
+  y: number
+  width: number
+  height: number
+  vx: number
+  vy: number
+  active: boolean
+  rotation: number
+  scale: number
+  alpha: number
+  zIndex: number
+  id: string
+  createdAt: number
+  lifetime?: number
+  particles?: Particle[]
+}
+
+export interface ShieldRing {
+  radius: number
+  rotation: number
+  speed: number
+  opacity: number
+  segments: number
+  active: boolean
+}
+
+export interface Player extends GameObject {
+  emoji: string
+  health: number
+  maxHealth: number
+  shield: number
+  maxShield: number
+  invulnerable: boolean
+  invulnerableTime: number
+  powerUps: string[]
+  score: number
+}
+
+export class GameEngine {
+  // ... existing code ...
+
+  destroyVisibleEnemies() {
+    const visibleEnemies = this.getVisibleEnemies()
+    let destroyedCount = 0
+    
+    visibleEnemies.forEach(enemy => {
+      destroyedCount++
+      this.destroyEnemy(enemy)
+    })
+    
+    // Update score based on destroyed enemies
+    if (this.player) {
+      this.player.score += destroyedCount * 100
+    }
+    
+    return destroyedCount
+  }
+
+  private getVisibleEnemies() {
+    // Get enemies that are currently on screen
+    const canvas = this.ctx.canvas
+    const visibleArea = {
+      left: 0,
+      top: 0,
+      right: canvas.width,
+      bottom: canvas.height
+    }
+    
+    return this.enemies.filter(enemy => 
+      enemy.active &&
+      enemy.x + enemy.width > visibleArea.left &&
+      enemy.x < visibleArea.right &&
+      enemy.y + enemy.height > visibleArea.top &&
+      enemy.y < visibleArea.bottom
+    )
+  }
+
+  private destroyEnemy(enemy: GameObject) {
+    // Create explosion effect at enemy position
+    this.particleSystem.createBombBurstExplosion(enemy.x, enemy.y, 0.5)
+    
+    // Disable the enemy
+    enemy.active = false
+    
+    // Add score particles
+    this.addScoreParticles(enemy.x, enemy.y, 100)
+  }
+
+  private addScoreParticles(x: number, y: number, score: number) {
+    const text = `+${score}`
+    const particle: Particle = {
+      x,
+      y,
+      width: 0,
+      height: 0,
+      vx: 0,
+      vy: -2,
+      active: true,
+      rotation: 0,
+      scale: 1,
+      alpha: 1,
+      zIndex: 100,
+      id: `score-${Date.now()}`,
+      createdAt: Date.now(),
+      lifetime: 1000,
+      color: '#ffff00',
+      size: 20,
+      life: 60,
+      maxLife: 60,
+      drag: 0.95,
+      type: 'circle',
+      emoji: text,
+      rotationSpeed: 0
+    }
+    
+    this.particles.push(particle)
+  }
+}

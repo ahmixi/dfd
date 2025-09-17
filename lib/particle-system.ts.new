@@ -1,0 +1,328 @@
+export interface Particle {
+  x: number
+  y: number
+  vx: number
+  vy: number
+  life: number
+  maxLife: number
+  size: number
+  color: string
+  alpha: number
+  rotation: number
+  rotationSpeed: number
+  scale: number
+  gravity: number
+  friction: number
+  glow: boolean
+  trail: { x: number; y: number; time: number }[]
+  active: boolean
+  gradient?: string[]
+  blendMode?: 'source-over' | 'screen' | 'add' | 'multiply'
+  shape?: 'circle' | 'square' | 'diamond' | 'star'
+  oscillation?: {
+    amplitude: number
+    frequency: number
+    offset: number
+  }
+  isExplosionCore?: boolean
+}
+
+export class ParticleSystem {
+  private particles: Particle[] = []
+  private maxParticles = 1000
+  private objectPool: Particle[] = []
+  
+  constructor(maxParticles = 1000) {
+    this.maxParticles = maxParticles
+    this.initializePool()
+  }
+  
+  private initializePool() {
+    for (let i = 0; i < this.maxParticles; i++) {
+      this.objectPool.push(this.createEmptyParticle())
+    }
+  }
+
+  private createEmptyParticle(): Particle {
+    return {
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      life: 0,
+      maxLife: 0,
+      size: 0,
+      color: '#ffffff',
+      alpha: 1,
+      rotation: 0,
+      rotationSpeed: 0,
+      scale: 1,
+      gravity: 0,
+      friction: 0.98,
+      glow: false,
+      trail: [],
+      active: false
+    }
+  }
+
+  createBombBurstExplosion(x: number, y: number, power: number = 1) {
+    // Create core explosion
+    this.createExplosionCore(x, y, power)
+    
+    // Create shockwave
+    this.createShockwave(x, y, power)
+    
+    // Create debris particles
+    this.createDebrisParticles(x, y, power)
+    
+    // Create sparkle effects
+    this.createSparkles(x, y, power)
+  }
+
+  private createExplosionCore(x: number, y: number, power: number) {
+    const coreParticleCount = Math.floor(50 * power)
+    const colors = ['#ff4400', '#ff6b00', '#ff9900', '#ffcc00']
+    
+    for (let i = 0; i < coreParticleCount; i++) {
+      const particle = this.getPooledParticle()
+      if (!particle) continue
+
+      const angle = (Math.PI * 2 * i) / coreParticleCount
+      const speed = 2 + Math.random() * 4 * power
+      
+      particle.x = x
+      particle.y = y
+      particle.vx = Math.cos(angle) * speed
+      particle.vy = Math.sin(angle) * speed
+      particle.life = 60
+      particle.maxLife = 60
+      particle.size = 10 + Math.random() * 10 * power
+      particle.color = colors[Math.floor(Math.random() * colors.length)]
+      particle.alpha = 1
+      particle.rotation = Math.random() * Math.PI * 2
+      particle.rotationSpeed = (-0.1 + Math.random() * 0.2) * power
+      particle.scale = 1
+      particle.gravity = -0.1
+      particle.friction = 0.98
+      particle.glow = true
+      particle.trail = []
+      particle.active = true
+      particle.blendMode = 'screen'
+      particle.isExplosionCore = true
+      
+      this.particles.push(particle)
+    }
+  }
+
+  private createShockwave(x: number, y: number, power: number) {
+    const particle = this.getPooledParticle()
+    if (!particle) return
+
+    particle.x = x
+    particle.y = y
+    particle.size = 1
+    particle.maxLife = 30
+    particle.life = particle.maxLife
+    particle.color = '#ffffff'
+    particle.alpha = 0.8
+    particle.scale = 1
+    particle.glow = true
+    particle.active = true
+    particle.blendMode = 'screen'
+    
+    // Custom update function for shockwave
+    const originalUpdate = particle.update
+    particle.update = (delta: number) => {
+      if (originalUpdate) originalUpdate(delta)
+      particle.scale += power * 0.5
+      particle.alpha = (particle.life / particle.maxLife) * 0.8
+    }
+    
+    this.particles.push(particle)
+  }
+
+  private createDebrisParticles(x: number, y: number, power: number) {
+    const debrisCount = Math.floor(30 * power)
+    const colors = ['#ffaa00', '#ff7700', '#ff4400']
+    
+    for (let i = 0; i < debrisCount; i++) {
+      const particle = this.getPooledParticle()
+      if (!particle) continue
+
+      const angle = Math.random() * Math.PI * 2
+      const speed = 5 + Math.random() * 10 * power
+      
+      particle.x = x
+      particle.y = y
+      particle.vx = Math.cos(angle) * speed
+      particle.vy = Math.sin(angle) * speed
+      particle.life = 45 + Math.random() * 30
+      particle.maxLife = particle.life
+      particle.size = 3 + Math.random() * 4
+      particle.color = colors[Math.floor(Math.random() * colors.length)]
+      particle.alpha = 1
+      particle.rotation = Math.random() * Math.PI * 2
+      particle.rotationSpeed = (-0.2 + Math.random() * 0.4) * power
+      particle.scale = 1
+      particle.gravity = 0.2
+      particle.friction = 0.95
+      particle.glow = true
+      particle.trail = []
+      particle.active = true
+      particle.shape = Math.random() > 0.5 ? 'diamond' : 'star'
+      
+      this.particles.push(particle)
+    }
+  }
+
+  private createSparkles(x: number, y: number, power: number) {
+    const sparkleCount = Math.floor(40 * power)
+    
+    for (let i = 0; i < sparkleCount; i++) {
+      const particle = this.getPooledParticle()
+      if (!particle) continue
+
+      const angle = Math.random() * Math.PI * 2
+      const speed = 1 + Math.random() * 3 * power
+      
+      particle.x = x
+      particle.y = y
+      particle.vx = Math.cos(angle) * speed
+      particle.vy = Math.sin(angle) * speed
+      particle.life = 30 + Math.random() * 60
+      particle.maxLife = particle.life
+      particle.size = 1 + Math.random() * 2
+      particle.color = '#ffffff'
+      particle.alpha = 1
+      particle.scale = 1
+      particle.gravity = -0.05
+      particle.friction = 0.99
+      particle.glow = true
+      particle.trail = []
+      particle.active = true
+      particle.blendMode = 'screen'
+      
+      // Add oscillation for sparkle effect
+      particle.oscillation = {
+        amplitude: 0.5,
+        frequency: 0.1,
+        offset: Math.random() * Math.PI * 2
+      }
+      
+      this.particles.push(particle)
+    }
+  }
+
+  getPooledParticle(): Particle | null {
+    return this.objectPool.pop() || null
+  }
+
+  update(delta: number) {
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const particle = this.particles[i]
+      
+      particle.life--
+      if (particle.life <= 0) {
+        particle.active = false
+        this.objectPool.push(particle)
+        this.particles.splice(i, 1)
+        continue
+      }
+
+      // Update position
+      particle.x += particle.vx
+      particle.y += particle.vy
+      
+      // Apply gravity
+      particle.vy += particle.gravity
+      
+      // Apply friction
+      particle.vx *= particle.friction
+      particle.vy *= particle.friction
+      
+      // Update rotation
+      particle.rotation += particle.rotationSpeed
+      
+      // Update alpha based on life
+      particle.alpha = (particle.life / particle.maxLife) * (particle.isExplosionCore ? 0.8 : 1)
+      
+      // Update trail
+      if (particle.trail.length > 0) {
+        particle.trail.push({ x: particle.x, y: particle.y, time: Date.now() })
+        if (particle.trail.length > 10) {
+          particle.trail.shift()
+        }
+      }
+      
+      // Apply oscillation if present
+      if (particle.oscillation) {
+        const oscValue = Math.sin(Date.now() * particle.oscillation.frequency + particle.oscillation.offset)
+        particle.alpha *= 0.5 + Math.abs(oscValue) * particle.oscillation.amplitude
+      }
+    }
+  }
+
+  render(ctx: CanvasRenderingContext2D) {
+    ctx.save()
+    
+    for (const particle of this.particles) {
+      if (!particle.active) continue
+      
+      ctx.globalAlpha = particle.alpha
+      if (particle.blendMode) {
+        ctx.globalCompositeOperation = particle.blendMode
+      }
+      
+      if (particle.glow) {
+        ctx.shadowBlur = particle.size * 2
+        ctx.shadowColor = particle.color
+      }
+      
+      ctx.fillStyle = particle.color
+      ctx.translate(particle.x, particle.y)
+      ctx.rotate(particle.rotation)
+      ctx.scale(particle.scale, particle.scale)
+      
+      switch (particle.shape) {
+        case 'square':
+          ctx.fillRect(-particle.size / 2, -particle.size / 2, particle.size, particle.size)
+          break
+        case 'diamond':
+          ctx.beginPath()
+          ctx.moveTo(0, -particle.size)
+          ctx.lineTo(particle.size, 0)
+          ctx.lineTo(0, particle.size)
+          ctx.lineTo(-particle.size, 0)
+          ctx.closePath()
+          ctx.fill()
+          break
+        case 'star':
+          this.drawStar(ctx, 0, 0, particle.size, particle.size / 2, 5)
+          break
+        default:
+          ctx.beginPath()
+          ctx.arc(0, 0, particle.size, 0, Math.PI * 2)
+          ctx.fill()
+      }
+      
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+    }
+    
+    ctx.restore()
+  }
+
+  private drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, outerRadius: number, innerRadius: number, points: number) {
+    ctx.beginPath()
+    for (let i = 0; i < points * 2; i++) {
+      const radius = i % 2 === 0 ? outerRadius : innerRadius
+      const angle = (i * Math.PI) / points
+      if (i === 0) {
+        ctx.moveTo(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle))
+      } else {
+        ctx.lineTo(cx + radius * Math.cos(angle), cy + radius * Math.sin(angle))
+      }
+    }
+    ctx.closePath()
+    ctx.fill()
+  }
+}

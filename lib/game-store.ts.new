@@ -1,0 +1,176 @@
+export type GameStatKey = "score" | "survive_time" | "enemies_killed" | "bombs_thrown" | "games_played"
+import { create } from "zustand"
+import { persist } from "zustand/middleware"
+
+export interface Character {
+  id: string
+  emoji?: string
+  image?: string
+  name: string
+  cost: number
+  category: "starter" | "basic" | "professional" | "special" | "legendary"
+  unlocked: boolean
+  stats: {
+    speed: number
+    bombPower: number
+    health: number
+    luck: number
+    energy?: number
+    bombBurst?: number // Added for bomb burst cooldown
+  }
+  abilities: string[]
+  description: string
+  rarity: "common" | "rare" | "epic" | "legendary"
+}
+
+export interface GameStats {
+  highScore: number
+  bestTime: number
+  totalGames: number
+  totalCoins: number
+  currentStreak: number
+  levelProgress: number
+  bombBurstsUsed: number // Added to track bomb burst usage
+}
+
+export interface UserProfile {
+  id: string
+  coins: number
+  selectedCharacter: string
+  unlockedCharacters: string[]
+  totalPlayTime: number
+  achievementsUnlocked: string[]
+  preferences: {
+    soundEnabled: boolean
+    hapticEnabled: boolean
+    theme: "light" | "dark"
+  }
+}
+
+export interface Achievement {
+  id: string
+  title: string
+  description: string
+  icon: string
+  category: "gameplay" | "collection" | "progression" | "special"
+  requirement: {
+    type: "score" | "games_played" | "characters_unlocked" | "coins_earned" | "streak" | "level_reached"
+    value: number
+  }
+  reward: {
+    coins: number
+    character?: string
+  }
+  unlocked: boolean
+  progress: number
+  dateUnlocked?: string
+}
+
+export interface DailyChallenge {
+  id: string
+  title: string
+  description: string
+  icon: string
+  requirement: {
+    type:
+      | "score"
+      | "survive_time"
+      | "enemies_killed"
+      | "bombs_thrown"
+      | "games_played"
+      | "characters_unlocked"
+      | "coins_earned"
+      | "streak"
+      | "level_reached"
+    value: number
+  }
+  reward: {
+    coins: number
+    experience: number
+  }
+  progress: number
+  completed: boolean
+  expiresAt: string
+}
+
+export interface PlayerStats {
+  totalPlayTime: number
+  totalScore: number
+  totalEnemiesKilled: number
+  totalBombsThrown: number
+  totalCoinsEarned: number
+  averageScore: number
+}
+
+// Add bomb burst related state and actions
+export interface GameState {
+  bombBurstAvailable: boolean
+  bombBurstCooldown: number
+  lastBombBurstTime: number
+}
+
+interface GameStore {
+  gameState: GameState
+  initializeBombBurst: () => void
+  triggerBombBurst: () => boolean
+  updateBombBurstCooldown: () => void
+}
+
+export const useGameStore = create<GameStore>()(
+  persist(
+    (set, get) => ({
+      gameState: {
+        bombBurstAvailable: true,
+        bombBurstCooldown: 30000, // 30 seconds cooldown
+        lastBombBurstTime: 0,
+      },
+
+      initializeBombBurst: () => {
+        set({
+          gameState: {
+            ...get().gameState,
+            bombBurstAvailable: true,
+            lastBombBurstTime: 0,
+          },
+        })
+      },
+
+      triggerBombBurst: () => {
+        const { gameState } = get()
+        const currentTime = Date.now()
+
+        if (!gameState.bombBurstAvailable) {
+          return false
+        }
+
+        set({
+          gameState: {
+            ...gameState,
+            bombBurstAvailable: false,
+            lastBombBurstTime: currentTime,
+          },
+        })
+
+        return true
+      },
+
+      updateBombBurstCooldown: () => {
+        const { gameState } = get()
+        const currentTime = Date.now()
+        const timeSinceLastBurst = currentTime - gameState.lastBombBurstTime
+
+        if (!gameState.bombBurstAvailable && timeSinceLastBurst >= gameState.bombBurstCooldown) {
+          set({
+            gameState: {
+              ...gameState,
+              bombBurstAvailable: true,
+            },
+          })
+        }
+      },
+    }),
+    {
+      name: "game-store",
+    }
+  )
+)

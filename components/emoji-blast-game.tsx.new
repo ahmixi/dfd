@@ -1,0 +1,167 @@
+"use client"
+
+import { useEffect, useRef, useState, useCallback } from "react"
+import { useGameStore } from "@/lib/game-store"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Progress } from "@/components/ui/progress"
+import { 
+  ArrowLeft, 
+  Play, 
+  Heart, 
+  Zap, 
+  Shield, 
+  Target, 
+  Settings, 
+  Trophy,
+  Star,
+  Sparkles,
+  Gamepad2,
+  Volume2,
+  VolumeX,
+  Pause,
+  RotateCcw,
+  Home,
+  Battery,
+  X,
+  Move,
+  Bomb,
+  Wand2,
+  Bot,
+  Hand
+} from "lucide-react"
+import { GameEngine } from "@/lib/game-engine"
+import type { Character } from "@/lib/game-store"
+import { motion, AnimatePresence } from "framer-motion"
+import { cn } from "@/lib/utils"
+import SpeechBubble from "@/components/speech-bubble"
+import { useSpeech } from "@/hooks/use-speech"
+import { screenShake } from "@/lib/screen-shake"
+
+export function EmojiBlastGame() {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const gameEngineRef = useRef<GameEngine | null>(null)
+  const [gameState, setGameState] = useState<"menu" | "playing" | "paused" | "gameOver" | "settings">("menu")
+  const { triggerBombBurst, updateBombBurstCooldown, gameState: bombBurstState } = useGameStore()
+  
+  interface GameStats {
+    score: number
+    level: number
+    health: number
+    maxHealth: number
+    shield: number
+  }
+
+  const [stats, setStats] = useState<GameStats>({
+    score: 0,
+    level: 1,
+    health: 100,
+    maxHealth: 100,
+    shield: 0
+  })
+
+  const handleBombBurst = useCallback(() => {
+    if (gameState !== "playing") return
+    
+    const success = triggerBombBurst()
+    if (!success) return
+
+    if (gameEngineRef.current) {
+      // Create explosion effect
+      const canvas = canvasRef.current
+      if (canvas) {
+        const centerX = canvas.width / 2
+        const centerY = canvas.height / 2
+        gameEngineRef.current.particleSystem.createBombBurstExplosion(centerX, centerY, 2)
+        
+        // Trigger screen shake
+        screenShake.trigger(30, 500)
+        
+        // Destroy visible enemies
+        gameEngineRef.current.destroyVisibleEnemies()
+      }
+    }
+  }, [gameState, triggerBombBurst])
+
+  // Update bomb burst cooldown
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (gameState === "playing") {
+        updateBombBurstCooldown()
+      }
+    }, 100)
+
+    return () => clearInterval(interval)
+  }, [gameState, updateBombBurstCooldown])
+
+  // Add screen shake to game render loop
+  useEffect(() => {
+    if (gameEngineRef.current && canvasRef.current) {
+      const originalRender = gameEngineRef.current.render.bind(gameEngineRef.current)
+      
+      gameEngineRef.current.render = () => {
+        const ctx = canvasRef.current?.getContext("2d")
+        if (!ctx) return
+
+        ctx.save()
+        
+        // Apply screen shake offset
+        const shakeOffset = screenShake.update(16) // Assuming 60fps
+        ctx.translate(shakeOffset.x, shakeOffset.y)
+        
+        // Call original render
+        originalRender()
+        
+        ctx.restore()
+      }
+    }
+  }, [])
+
+  // Render game controls
+  const renderGameControls = () => {
+    if (gameState !== "playing") return null
+
+    const cooldownProgress = bombBurstState.bombBurstAvailable 
+      ? 100 
+      : ((Date.now() - bombBurstState.lastBombBurstTime) / bombBurstState.bombBurstCooldown) * 100
+
+    return (
+      <div className="fixed bottom-4 right-4 flex flex-col gap-2">
+        <Button
+          variant="destructive"
+          size="lg"
+          className={cn(
+            "rounded-full w-16 h-16 p-0 relative overflow-hidden",
+            !bombBurstState.bombBurstAvailable && "opacity-50 cursor-not-allowed"
+          )}
+          onClick={handleBombBurst}
+          disabled={!bombBurstState.bombBurstAvailable}
+        >
+          <Bomb className="w-8 h-8" />
+          {!bombBurstState.bombBurstAvailable && (
+            <div 
+              className="absolute bottom-0 left-0 w-full bg-black/50"
+              style={{ 
+                height: `${100 - cooldownProgress}%`,
+                transition: "height 100ms linear"
+              }}
+            />
+          )}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative w-full h-full">
+      <canvas
+        ref={canvasRef}
+        className="w-full h-full"
+        style={{ imageRendering: "pixelated" }}
+      />
+      {renderGameControls()}
+      {/* Rest of the component remains unchanged */}
+    </div>
+  )
+}
