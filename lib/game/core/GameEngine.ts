@@ -24,7 +24,7 @@ export class GameEngine {
 
   // Runner gameplay state
   private lanesX: number[] = [-2, 0, 2];
-  private player: { mesh: THREE.Mesh; laneIndex: number; vy: number; sliding: boolean; speed: number; alive: boolean } | null = null;
+  private player: { mesh: THREE.Mesh; laneIndex: number; vy: number; sliding: boolean; speed: number; alive: boolean; isInvulnerable?: boolean; shieldRing?: THREE.Mesh } | null = null;
   private laneTargetX = 0;
   private ground: THREE.Mesh | null = null;
   private obstacles: THREE.Mesh[] = [];
@@ -204,20 +204,36 @@ export class GameEngine {
     const p = this.player;
     if (!p || !p.alive) return;
 
-    // Scroll ground illusion
-    if (this.ground) this.ground.position.z -= p.speed * deltaTime;
-    if (this.ground && this.ground.position.z < -80) this.ground.position.z += 40;
-
-    // Spawn obstacles
-    this.spawnTimer -= deltaTime;
-    if (this.spawnTimer <= 0) {
-      this.spawnTimer = 1.2 + Math.random() * 0.6;
-      const lane = Math.floor(Math.random() * this.lanesX.length);
-      const obs = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), new THREE.MeshStandardMaterial({ color: 0xff5860 }));
-      obs.castShadow = true;
-      obs.position.set(this.lanesX[lane], 0.4, -30);
-      this.scene.add(obs);
-      this.obstacles.push(obs);
+    // Shield visual effects
+    if (p.isInvulnerable) {
+      // Add shield rings
+      if (!p.shieldRing) {
+        const ringGeo = new THREE.TorusGeometry(0.8, 0.08, 16, 32);
+        const ringMat = new THREE.MeshStandardMaterial({ color: 0x0099ff, emissive: 0x0099ff, emissiveIntensity: 0.7 });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.position.set(0, 0, 0);
+        p.mesh.add(ring);
+        p.shieldRing = ring;
+      }
+      // Animate ring rotation and scale for energy effect
+      p.shieldRing.rotation.x += deltaTime * 2;
+      p.shieldRing.rotation.y += deltaTime * 2.5;
+      p.shieldRing.scale.set(1 + Math.sin(performance.now() * 0.01) * 0.08, 1 + Math.sin(performance.now() * 0.01) * 0.08, 1 + Math.sin(performance.now() * 0.01) * 0.08);
+      // Shake effect
+      p.mesh.position.x += (Math.random() - 0.5) * 0.04;
+      p.mesh.position.y += (Math.random() - 0.5) * 0.04;
+    } else {
+      // Remove shield ring if exists
+      if (p.shieldRing) {
+        p.mesh.remove(p.shieldRing);
+        p.shieldRing.geometry.dispose();
+        if (Array.isArray(p.shieldRing.material)) {
+          p.shieldRing.material.forEach(mat => mat.dispose());
+        } else {
+          p.shieldRing.material.dispose();
+        }
+        p.shieldRing = undefined;
+      }
     }
 
     // Spawn coins
@@ -269,6 +285,11 @@ export class GameEngine {
     for (const o of this.obstacles) {
       const box = new THREE.Box3().setFromObject(o);
       if (playerBox.intersectsBox(box)) {
+        // If player is invulnerable (shield active), ignore obstacle collision
+        if (p.isInvulnerable) {
+          // Optionally play shield sound or effect here
+          continue;
+        }
         p.alive = false;
         this.audioManager.play('powerup');
         this.onGameOver?.();
