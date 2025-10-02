@@ -28,6 +28,8 @@ export default function AngryQubeGame() {
       const mobile = typeof window !== 'undefined' && /Mobi|Android|iPhone|iPad/.test(navigator.userAgent || '');
       setIsMobile(mobile);
       setIsPortrait(window.innerHeight > window.innerWidth);
+      // auto-enable rotated mode on portrait mobile to force landscape layout
+      if (mobile && window.innerHeight > window.innerWidth) setRotatedMode(true);
     };
     check();
     window.addEventListener('resize', check);
@@ -142,14 +144,14 @@ export default function AngryQubeGame() {
           </div>
 
           {/* Controls: left cluster and right cluster to avoid overlap */}
-          <div className="absolute bottom-6 left-6 flex flex-col gap-3 z-50">
+          <div className={`absolute ${isMobile ? 'bottom-4 left-4' : 'bottom-6 left-6'} flex flex-col gap-3 z-50`}> 
             <div className="flex gap-3">
               <button
                 onMouseDown={() => gameApiRef.current?.pressLeft?.(true)}
                 onMouseUp={() => gameApiRef.current?.pressLeft?.(false)}
                 onTouchStart={() => gameApiRef.current?.pressLeft?.(true)}
                 onTouchEnd={() => gameApiRef.current?.pressLeft?.(false)}
-                className="w-14 h-14 bg-white/12 border border-white/20 rounded-lg font-bold text-white active:bg-white/30 transition-colors"
+                className={`${isMobile ? 'w-12 h-12' : 'w-14 h-14'} bg-white/12 border border-white/20 rounded-lg font-bold text-white active:bg-white/30 transition-colors`}
                 aria-label="left"
               >
                 ←
@@ -159,7 +161,7 @@ export default function AngryQubeGame() {
                 onMouseUp={() => gameApiRef.current?.pressRight?.(false)}
                 onTouchStart={() => gameApiRef.current?.pressRight?.(true)}
                 onTouchEnd={() => gameApiRef.current?.pressRight?.(false)}
-                className="w-14 h-14 bg-white/12 border border-white/20 rounded-lg font-bold text-white active:bg-white/30 transition-colors"
+                className={`${isMobile ? 'w-12 h-12' : 'w-14 h-14'} bg-white/12 border border-white/20 rounded-lg font-bold text-white active:bg-white/30 transition-colors`}
                 aria-label="right"
               >
                 →
@@ -167,25 +169,32 @@ export default function AngryQubeGame() {
             </div>
           </div>
 
-          <div className="absolute bottom-6 right-6 flex flex-col items-end gap-3 z-50">
+          <div className={`absolute ${isMobile ? 'bottom-4 right-4' : 'bottom-6 right-6'} flex flex-col items-end gap-3 z-50`}>
             <button
               onClick={() => gameApiRef.current?.jump?.()}
-              className="w-20 h-20 bg-white/18 border-2 border-white rounded-xl font-bold text-white active:bg-white/40 transition-colors"
+              className={`${isMobile ? 'w-16 h-16 text-sm' : 'w-20 h-20'} bg-white/18 border-2 border-white rounded-xl font-bold text-white active:bg-white/40 transition-colors`}
               aria-label="jump"
             >
               JUMP
             </button>
             <div className="flex gap-2 mt-1">
               <button
+                onClick={() => gameApiRef.current?.fire?.()}
+                className={`${isMobile ? 'w-10 h-10 text-sm' : 'w-12 h-12'} bg-red-500/90 border border-red-300 rounded-lg font-bold text-white active:brightness-95 transition-colors"`}
+                aria-label="fire"
+              >
+                🔥
+              </button>
+              <button
                 onClick={() => gameApiRef.current?.activateBoost?.()}
-                className="w-12 h-12 bg-yellow-400/90 border border-yellow-300 rounded-lg font-bold text-black active:brightness-95 transition-colors"
+                className={`${isMobile ? 'w-10 h-10 text-sm' : 'w-12 h-12'} bg-yellow-400/90 border border-yellow-300 rounded-lg font-bold text-black active:brightness-95 transition-colors`}
                 aria-label="boost"
               >
                 ⚡
               </button>
               <button
                 onClick={() => gameApiRef.current?.attemptTakedown?.()}
-                className="w-12 h-12 bg-indigo-600/90 border border-indigo-400 rounded-lg font-bold text-white active:brightness-95 transition-colors"
+                className={`${isMobile ? 'w-10 h-10 text-sm' : 'w-12 h-12'} bg-indigo-600/90 border border-indigo-400 rounded-lg font-bold text-white active:brightness-95 transition-colors`}
                 aria-label="stealth"
               >
                 ✦
@@ -264,8 +273,11 @@ function initializeAngryQube(
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   const C = ctx;
+  // local mobile detection for in-engine fallbacks
+  const isMobile = typeof window !== 'undefined' && /Mobi|Android|iPhone|iPad/.test(navigator.userAgent || '');
 
   const keys = { left: false, right: false, up: false, down: false } as any;
+  keys.fire = false;
   let rafId: number | null = null;
   let lastTime = 0;
   let prevGrounded = false;
@@ -290,6 +302,7 @@ function initializeAngryQube(
     banners: [],           // HUD banners queue
     camera: { x: 0, y: 0 },
     level: 1,
+    hitMarkers: [],
   };
 
   const stats: any = { score: 0, coins: 0, distance: 0, deaths: 0, boostCharge: 0, boostThreshold: 8 };
@@ -311,6 +324,12 @@ function initializeAngryQube(
     doubleJumpVelocity: -440,
     coyoteTime: 0.12, // seconds after leaving ground when jump still allowed
     jumpBufferTime: 0.12,
+    // combat / weapon
+    playerBulletSpeed: 980,
+    playerBulletDamage: 2,
+    playerFireCooldown: 0.16,
+    enemySpawnBaseChance: 0.33,
+    difficultyScalePer1000: 0.08, // increases spawn/aggression per 1000px
   };
   // preload character image if provided (normalize relative paths)
   let charImage: HTMLImageElement | null = null;
@@ -328,7 +347,9 @@ function initializeAngryQube(
   function initGame() {
   // size player relative to viewport for mobile-first UX; use smaller dimension and scale up slightly
   const vmin = Math.min(window.innerWidth, window.innerHeight);
-  const playerSize = Math.max(36, Math.min(140, Math.floor(vmin * 0.10))); // 10% of smaller viewport dimension, clamped
+  // increase visible player size on mobile/portrait to improve readability
+  const base = Math.floor(vmin * 0.10);
+  const playerSize = Math.max(36, Math.min(180, Math.floor((isMobile ? base * 1.45 : base)))); // scaled up on mobile
 
     game.player = {
       x: 100,
@@ -536,11 +557,24 @@ function initializeAngryQube(
       if (Math.random() > 0.65) {
         const roll = Math.random();
         let kind: any = 'ranged';
-        if (roll < 0.2) kind = 'melee';
-        else if (roll < 0.5) kind = 'ranged';
-        else if (roll < 0.8) kind = 'seeker';
-        else kind = 'drone';
-        game.enemies.push({ id: enemyIdCounter++, x: px + pw/2, y: py - 40, width: 40, height: 40, velX: 60, baseSpeed: 60, chaseSpeed: 220, patrol: { start: px - 80, end: px + pw + 80 }, lightAngle: 0, lightDistance: 240, lightCone: 0.9, state: 'patrol', detectionTimer: 0, alertTimer: 0, throwCooldown: Math.random()*2, flash:0, wanderTimer: Math.random()*2, targetX: px + pw/2, scanCenter:0, scanPhase: Math.random()*Math.PI*2, scanSpeed: 1, scanRange: 0.9, scanDir: Math.random()>0.5?1:-1, beamPulsePhase: Math.random()*Math.PI*2, beamPulseSpeed: 1.8, dynamicCone:0.9, beamAlpha:0.35, blinkTimer:2+Math.random()*4, blinkState:0, blinkDuration:0, baseCone:0.9, kind: kind, health: 2 + Math.floor(Math.random()*2), meleeCooldown:0, meleeRange:48, meleeDamage: kind==='melee'?2:1, projectileSpeed: kind==='drone'?520:420, accuracy:0.85, canDescend: kind==='seeker', velY:0, grounded:true });
+        if (roll < 0.15) kind = 'melee';
+        else if (roll < 0.4) kind = 'ranged';
+        else if (roll < 0.6) kind = 'seeker';
+        else if (roll < 0.75) kind = 'drone';
+        else if (roll < 0.9) kind = 'armored';
+        else if (roll < 0.98) kind = 'dodger';
+        else kind = 'shielded';
+        // scale difficulty by distance: spawn stronger/faster enemies further along
+        const distFactor = 1 + Math.floor((stats.distance || 0) / 1000) * (TUNING.difficultyScalePer1000 || 0.08);
+        const baseHealth = 2 + Math.floor(Math.random()*2);
+        let health = Math.max(1, Math.round(baseHealth * distFactor));
+        let chase = Math.floor((220 + Math.random()*60) * Math.max(1, 1 + distFactor * 0.25));
+        // apply kind-specific tweaks
+        const enemyObj: any = { id: enemyIdCounter++, x: px + pw/2, y: py - 40, width: 40, height: 40, velX: 60, baseSpeed: 60, chaseSpeed: chase, patrol: { start: px - 80, end: px + pw + 80 }, lightAngle: 0, lightDistance: 240, lightCone: 0.9, state: 'patrol', detectionTimer: 0, alertTimer: 0, throwCooldown: Math.random()*2, flash:0, wanderTimer: Math.random()*2, targetX: px + pw/2, scanCenter:0, scanPhase: Math.random()*Math.PI*2, scanSpeed: 1, scanRange: 0.9, scanDir: Math.random()>0.5?1:-1, beamPulsePhase: Math.random()*Math.PI*2, beamPulseSpeed: 1.8, dynamicCone:0.9, beamAlpha:0.35, blinkTimer:2+Math.random()*4, blinkState:0, blinkDuration:0, baseCone:0.9, kind: kind, health: health, meleeCooldown:0, meleeRange:48, meleeDamage: kind==='melee'?2:1, projectileSpeed: kind==='drone'?520:420, accuracy:0.85, canDescend: kind==='seeker', velY:0, grounded:true };
+        if (kind === 'armored') { enemyObj.armor = 0.5; enemyObj.health = Math.max(3, Math.round(enemyObj.health * 1.6)); }
+        if (kind === 'dodger') { enemyObj.baseSpeed = 120; enemyObj.chaseSpeed = Math.max(260, Math.floor(enemyObj.chaseSpeed * 1.25)); enemyObj.dodgeChance = 0.6; }
+        if (kind === 'shielded') { enemyObj.shield = true; enemyObj.shieldHealth = 1; enemyObj.health = Math.max(2, enemyObj.health); }
+        game.enemies.push(enemyObj);
       }
     }
 
@@ -654,6 +688,38 @@ function initializeAngryQube(
 
     p.detected = false;
     game.enemies.forEach((enemy: any) => {
+      // proactive dodge detection: if a player projectile is on a collision course,
+      // dodger-type enemies will perform a lateral burst and become briefly invulnerable
+      if (enemy.dodgeChance && !enemy.dodging) {
+        for (const pr of game.projectiles) {
+          if (!pr || pr.owner !== 'player') continue;
+          const relX = enemy.x - pr.x;
+          const relY = enemy.y - pr.y;
+          const v2 = (pr.vx * pr.vx + pr.vy * pr.vy) || 1;
+          const tClosest = (relX * pr.vx + relY * pr.vy) / v2;
+          if (tClosest >= 0 && tClosest < 0.6) {
+            const cx = pr.x + pr.vx * tClosest;
+            const cy = pr.y + pr.vy * tClosest;
+            const dist = Math.hypot(enemy.x - cx, enemy.y - cy);
+            const dangerRadius = Math.max(18, Math.min(80, (enemy.width || 40) * 0.9));
+            if (dist < dangerRadius && Math.random() < (enemy.dodgeChance || 0.5)) {
+              // initiate dodge: lateral burst away from projectile direction
+              enemy.dodging = true;
+              enemy.dodgeTimer = 0.36;
+              enemy.invulnTimer = 0.42;
+              const dir = pr.vx > 0 ? -1 : 1;
+              const burst = (enemy.chaseSpeed || enemy.baseSpeed || 160) * 1.8;
+              enemy.velX = dir * burst;
+              // small hop when grounded to make dodge more effective
+              if (enemy.grounded) { enemy.velY = -260; enemy.grounded = false; }
+              // particle flourish for feedback
+              for (let k = 0; k < 8; k++) game.particles.push({ x: enemy.x, y: enemy.y + (enemy.height||20)/2, vx: (Math.random()-0.5)*40 + dir*80, vy: -Math.random()*40, size: 2, color: '#88ddff', life: 0.36 });
+              break;
+            }
+          }
+        }
+      }
+
       // smarter movement: predictive intercept + smooth acceleration when alerted
       if (enemy.state === "alert") {
         // player's center
@@ -892,8 +958,12 @@ function initializeAngryQube(
           }
         }
 
-        // decay flash effect
-        enemy.flash = Math.max(0, (enemy.flash || 0) - delta);
+  // decay flash effect
+  enemy.flash = Math.max(0, (enemy.flash || 0) - delta);
+  // dodge/invulnerability timers decrement
+  enemy.dodgeTimer = Math.max(0, (enemy.dodgeTimer || 0) - delta);
+  if (enemy.dodgeTimer <= 0) enemy.dodging = false;
+  enemy.invulnTimer = Math.max(0, (enemy.invulnTimer || 0) - delta);
         // flanker movement: move toward flankTargetX if present
         if (enemy.role === 'flanker' && typeof enemy.flankTargetX === 'number') {
           const towards = Math.sign(enemy.flankTargetX - enemy.x);
@@ -969,9 +1039,12 @@ function initializeAngryQube(
 
     // emit subtle afterimage trail for motion (push a short-lived trail sample) with velocity for streaks
     const speed = Math.hypot(p.velX, p.velY);
-    if (speed > 80 || p.boostActive) {
-      game.trails.push({ x: p.x + p.width/2, y: p.y + p.height/2, vx: p.velX, vy: p.velY, life: 0.28, maxLife: 0.28, size: Math.max(6, p.width * 0.28), alpha: 0.45 });
-      if (game.trails.length > 18) game.trails.shift();
+    if (speed > (isMobile ? 120 : 80) || p.boostActive) {
+      // less frequent/shorter trails on mobile for performance
+      if (!isMobile || Math.random() > 0.36) {
+        game.trails.push({ x: p.x + p.width/2, y: p.y + p.height/2, vx: p.velX, vy: p.velY, life: isMobile ? 0.18 : 0.28, maxLife: isMobile ? 0.18 : 0.28, size: Math.max(4, p.width * (isMobile ? 0.16 : 0.28)), alpha: 0.45 });
+      }
+      if (game.trails.length > (isMobile ? 8 : 18)) game.trails.shift();
     }
 
     // landing detection: if we just became grounded
@@ -1045,7 +1118,7 @@ function initializeAngryQube(
           }
         }
 
-        if (!pr) continue;
+  if (!pr) continue;
 
   // collide with player using projectile bounding box
   const rect = { x: p.x, y: p.y, width: p.width, height: p.height };
@@ -1073,6 +1146,69 @@ function initializeAngryQube(
         if (pr && pr.life <= 0) {
           try { playSfx('projectile_hit', { vol: 0.9 }); } catch (e) {}
           game.projectiles.splice(i, 1);
+        }
+      }
+    }
+
+    // player firing: handle fire input and cooldown
+    p._fireCooldown = Math.max(0, (p._fireCooldown || 0) - delta);
+    if ((keys.fire || (p.autoFire && p._autoFireTimer > 0)) && p._fireCooldown <= 1e-6) {
+      p._fireCooldown = TUNING.playerFireCooldown || 0.22;
+      // spawn bullet traveling forward (based on player's facing)
+      const dir = (p.velX >= 0) ? 1 : -1;
+      const sx = p.x + p.width/2 + dir * (p.width/2 + 6);
+      const sy = p.y + p.height/2 - 6;
+      const speed = TUNING.playerBulletSpeed || 760;
+  game.projectiles.push({ x: sx, y: sy, vx: dir * speed, vy: 0, size: 6, life: 2.4, owner: 'player', ownerId: 0, damage: TUNING.playerBulletDamage || 2, type: 'bullet' });
+      try { playSfx('enemy_shoot', { vol: 0.8 }); } catch (e) {}
+      for (let m = 0; m < 6; m++) game.particles.push({ x: sx, y: sy, vx: (Math.random()-0.5)*120 + dir*20, vy: (Math.random()-0.5)*40, size: 2+Math.random()*2, color: '#ffd0d0', life: 0.25 });
+    }
+
+    // projectiles hit enemies: simple AABB check and apply damage
+    for (let i = game.projectiles.length - 1; i >= 0; i--) {
+      const pr = game.projectiles[i];
+      if (!pr || pr.owner !== 'player') continue;
+      for (let j = game.enemies.length - 1; j >= 0; j--) {
+        const en = game.enemies[j];
+        if (!en) continue;
+        const prBox = { x: pr.x - pr.size/2, y: pr.y - pr.size/2, width: pr.size, height: pr.size };
+        const enBox = { x: en.x - en.width/2, y: en.y - en.height/2, width: en.width, height: en.height };
+        const hit = prBox.x < enBox.x + enBox.width && prBox.x + prBox.width > enBox.x && prBox.y < enBox.y + enBox.height && prBox.y + prBox.height > enBox.y;
+        if (hit) {
+          // dodger chance: avoid hit
+          if (en.dodgeChance && Math.random() < en.dodgeChance) {
+            // small spark to indicate miss
+            for (let k = 0; k < 6; k++) game.particles.push({ x: pr.x, y: pr.y, vx: (Math.random()-0.5)*80, vy: (Math.random()-0.5)*80, size: 1+Math.random()*2, color: '#cccccc', life: 0.5 });
+            game.projectiles.splice(i, 1);
+            break;
+          }
+          // shielded: consume shield first
+          if (en.shield && en.shieldHealth > 0) {
+            en.shieldHealth -= 1;
+            try { playSfx('enemy_hit', { vol: 0.6 }); } catch (e) {}
+            game.hitMarkers = game.hitMarkers || [];
+            game.hitMarkers.push({ x: en.x || 0, y: (en.y || 0) - (en.height||24)/2, life: 0.6, text: 'SHIELD' });
+            game.projectiles.splice(i, 1);
+            break;
+          }
+          // armored reduces incoming damage
+          let damage = (pr.damage || 1);
+          if (en.armor) damage = Math.max(1, Math.round(damage * (1 - en.armor)));
+          en.health = (en.health || 1) - damage;
+          try { playSfx('enemy_hit', { vol: 0.9 }); } catch (e) {}
+          game.projectiles.splice(i, 1);
+          // spawn stronger sparks and a hit marker
+          for (let k = 0; k < 12; k++) game.particles.push({ x: pr.x, y: pr.y, vx: (Math.random() - 0.5) * 260, vy: (Math.random() - 0.5) * 260, size: 2 + Math.random()*4, color: '#ff9999', life: 0.9 });
+          game.hitMarkers = game.hitMarkers || [];
+          game.hitMarkers.push({ x: en.x || 0, y: (en.y || 0) - (en.height||24)/2, life: 0.6, text: '-' + damage });
+          if (en.health <= 0) {
+            // enemy dies
+            game.enemies.splice(j, 1);
+            stats.score += 300;
+            try { playSfx('enemy_death', { vol: 0.95 }); } catch (e) {}
+            for (let m = 0; m < 16; m++) game.particles.push({ x: en.x, y: en.y, vx: (Math.random()-0.5)*300, vy: (Math.random()-0.5)*200, size: 3+Math.random()*3, color: '#88ff88', life: 0.9 });
+          }
+          break;
         }
       }
     }
@@ -1286,6 +1422,27 @@ function initializeAngryQube(
       } catch (e) { /* safe fallback */ }
       // body
       C.fillStyle = "#ffffff"; C.beginPath(); C.arc(0,0,20,0,Math.PI*2); C.fill();
+      // shield visual: glow ring when shielded
+      if (enemy.shield && (enemy.shieldHealth || 0) > 0) {
+        C.save();
+        const shStrength = Math.max(0.25, Math.min(1, (enemy.shieldHealth || 1) / 2));
+        C.globalCompositeOperation = 'lighter';
+        C.shadowColor = `rgba(120,200,255,${0.9 * shStrength})`;
+        C.shadowBlur = 14 * shStrength;
+        C.strokeStyle = `rgba(120,200,255,${0.65 * shStrength})`;
+        C.lineWidth = 6 * shStrength;
+        C.beginPath(); C.arc(0, 0, 26 + 6 * (1 - shStrength), 0, Math.PI*2); C.stroke();
+        // small shield health tick markers
+        const ticks = Math.max(1, Math.floor(enemy.shieldHealth || 1));
+        for (let ti = 0; ti < ticks; ti++) {
+          const a = (ti / ticks) * Math.PI * 2 - Math.PI/2;
+          const rx = Math.cos(a) * (30 + shStrength * 4);
+          const ry = Math.sin(a) * (30 + shStrength * 4);
+          C.fillStyle = `rgba(180,230,255,${0.95 * shStrength})`;
+          C.beginPath(); C.arc(rx, ry, 2 + shStrength*1.5, 0, Math.PI*2); C.fill();
+        }
+        C.restore();
+      }
       // iris / eye
       const eyeColor = enemy.state === "alert" ? "#ff0000" : "#000000"; C.fillStyle = eyeColor; C.beginPath(); C.arc(0,0,12,0,Math.PI*2); C.fill();
       // pupil tracking
@@ -1456,12 +1613,27 @@ function initializeAngryQube(
       C.restore();
     }
 
+    // draw hit markers (floating damage numbers)
+    if (game.hitMarkers && game.hitMarkers.length) {
+      C.save(); C.setTransform(1,0,0,1,0,0);
+      for (let i = game.hitMarkers.length - 1; i >= 0; i--) {
+        const m = game.hitMarkers[i];
+        C.globalAlpha = Math.max(0, Math.min(1, m.life / 0.6));
+        C.fillStyle = '#ffdddd'; C.font = 'bold 18px sans-serif'; C.textAlign = 'center'; C.fillText(m.text, Math.floor(m.x - game.camera.x), Math.floor(m.y - game.camera.y));
+        m.y -= 16 * (1/60); m.life -= 1/60;
+      }
+      game.hitMarkers = game.hitMarkers.filter((h: any) => h.life > 0);
+      C.restore();
+    }
+
     // SAFE GROUND banner: show when there are spikes but all are cooling (no telegraph/active)
     try {
       const anyActive = game.spikes && game.spikes.some((s: any) => s.active || (s.telegraphTimer && s.telegraphTimer > 0));
       const anySpikes = game.spikes && game.spikes.length;
       const allCooling = anySpikes && !anyActive && game.spikes.some((s: any) => (s.cooldown || 0) > 0);
-      if (anySpikes && !anyActive) {
+  // hide large banner on small screens / mobile because it overlaps controls
+  const narrow = typeof window !== 'undefined' && window.innerWidth < 720;
+  if (anySpikes && !anyActive && !isMobile && !narrow) {
         C.save(); C.setTransform(1,0,0,1,0,0);
         const bw = Math.min(980, Math.max(240, window.innerWidth - 40));
         const bh = 84; const bx = (window.innerWidth - bw) / 2; const by = window.innerHeight - bh - 16;
@@ -1619,7 +1791,34 @@ function initializeAngryQube(
   function drawEverything() {
     drawGame();
     drawLifeBar();
+      drawDifficultyHUD();
   }
+
+    // screen-space difficulty HUD showing multiplier/wave based on stats.distance
+    function drawDifficultyHUD() {
+      const dpr = window.devicePixelRatio || 1;
+      C.save(); C.setTransform(1,0,0,1,0,0);
+      const narrow = typeof window !== 'undefined' && window.innerWidth < 720;
+      const dd = Math.floor((stats.distance || 0) / 1000);
+      const multiplier = 1 + dd * (TUNING.difficultyScalePer1000 || 0.08);
+      const txt = `DIFFICULTY x${multiplier.toFixed(2)}  •  WAVE ${dd + 1}`;
+      const fw = 260; const fh = 42; const px = window.innerWidth - fw - 18; const py = 18;
+      if (!narrow) {
+        C.globalAlpha = 0.9; C.fillStyle = 'rgba(10,10,10,0.6)'; C.fillRect(px, py, fw, fh);
+        C.fillStyle = '#ffffff'; C.font = '16px sans-serif'; C.textAlign = 'left'; C.textBaseline = 'middle';
+        C.fillText(txt, px + 14, py + fh/2);
+        // small progress bar indicating progress to next wave
+        const progress = ((stats.distance || 0) % 1000) / 1000;
+        C.fillStyle = '#333'; C.fillRect(px + 14, py + fh - 12, fw - 28, 6);
+        C.fillStyle = '#ffcc66'; C.fillRect(px + 14, py + fh - 12, Math.max(4, Math.floor((fw - 28) * progress)), 6);
+      } else {
+        // compact overlay for narrow screens
+        C.globalAlpha = 0.9; C.fillStyle = 'rgba(10,10,10,0.6)'; C.fillRect(12, 18, 180, 34);
+        C.fillStyle = '#ffffff'; C.font = '14px sans-serif'; C.textAlign = 'left'; C.textBaseline = 'middle';
+        C.fillText(`WAVE ${dd + 1}  x${multiplier.toFixed(2)}`, 20, 18 + 34/2);
+      }
+      C.restore();
+    }
 
   // draw HUD lifebar overlay (outside camera transform)
   function drawLifeBar() {
@@ -1665,11 +1864,13 @@ function initializeAngryQube(
         const p = game.player; if (p) p.attemptTakedown = true;
         e.preventDefault();
       }
+      if (e.key === 'f' || e.key === 'F') { keys.fire = true; e.preventDefault(); }
   }
 
   function onKeyUp(e: KeyboardEvent) {
     if (e.key === "ArrowLeft" || e.key === "a") keys.left = false;
     if (e.key === "ArrowRight" || e.key === "d") keys.right = false;
+    if (e.key === 'f' || e.key === 'F') keys.fire = false;
   }
 
   // Start the game
