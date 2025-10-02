@@ -9,7 +9,9 @@ import { Dashboard } from "@/components/dashboard"
 import { CharacterShop } from "@/components/character-shop"
 import { GameSettings } from "@/components/game-settings"
 import { EmojiBlastGame } from "@/components/emoji-blast-game"
-// other games removed — only Emoji Blast remains
+import NexusRunnerGame from "@/components/nexus-runner-game"
+import AngryQubeGame from "@/components/angry-qube-game"
+// other games removed — only active games remain
 import { StatisticsPage } from "@/components/statistics-page"
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt"
 import { AchievementToast } from "@/components/achievement-toast"
@@ -17,7 +19,7 @@ import { AchievementToast } from "@/components/achievement-toast"
 export default function HomePage() {
   const currentScreen = useGameStore((state) => state.currentScreen)
 
-  const isGameplay = currentScreen === "game"
+  const isGameplay = currentScreen === "game" || currentScreen === "nexus-runner" || currentScreen === "angry-qube"
 
   // When gameplay is active, lock body scrolling to give a true fullscreen experience
   // and avoid background gutters or accidental scroll on mobile.
@@ -56,6 +58,8 @@ export default function HomePage() {
         >
           {currentScreen === "dashboard" && <Dashboard />}
           {currentScreen === "game" && <EmojiBlastGame />}
+          {currentScreen === "nexus-runner" && <NexusRunnerGame />}
+          {currentScreen === "angry-qube" && <AngryQubeGame />}
           {currentScreen === "shop" && <CharacterShop />}
           {currentScreen === "settings" && <GameSettings />}
           {currentScreen === "leaderboard" && <StatisticsPage />}

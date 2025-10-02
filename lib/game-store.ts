@@ -120,10 +120,12 @@ interface GameStore {
   currentScreen:
   | "dashboard"
   | "game"
+  | "nexus-runner"
   | "shop"
   | "settings"
   | "leaderboard"
   | "achievements"
+  | "angry-qube"
   isGamePaused: boolean
 
   // Achievements
@@ -144,10 +146,12 @@ interface GameStore {
     screen:
   | "dashboard"
   | "game"
+  | "nexus-runner"
   | "shop"
   | "settings"
   | "leaderboard"
-  | "achievements",
+  | "achievements"
+  | "angry-qube",
   ) => void
   toggleGamePause: () => void
   updatePreferences: (preferences: Partial<UserProfile["preferences"]>) => void
@@ -508,6 +512,14 @@ export const useGameStore = create<GameStore>()(
 
       gameStats: {
         "emoji-blast": {
+          highScore: 0,
+          bestTime: 0,
+          totalGames: 0,
+          totalCoins: 0,
+          currentStreak: 0,
+          levelProgress: 1,
+        },
+        "nexus-runner": {
           highScore: 0,
           bestTime: 0,
           totalGames: 0,

@@ -22,6 +22,26 @@ export function Dashboard() {
       category: "Action",
     },
     {
+      id: "nexus-runner",
+      title: "NEXUS Runner",
+      description: "Cinematic neon runner. Jump, dash, combo.",
+      thumbnail: "/emoji-runner-game-thumbnail.jpg",
+      highScore: (gameStats["nexus-runner"]?.highScore ?? 0),
+      isAvailable: true,
+      difficulty: "Easy",
+      category: "Arcade",
+    },
+    {
+      id: "angry-qube",
+      title: "Angry Qube",
+      description: "The Geometric Revolution. Test your reflexes!",
+      thumbnail: "/placeholder-logo.jpg",
+      highScore: (gameStats["angry-qube"]?.highScore ?? 0),
+      isAvailable: true,
+      difficulty: "Medium",
+      category: "Arcade",
+    },
+    {
       id: "emoji-runner",
       title: "Emoji Runner",
       description: "Run and jump through emoji obstacles!",
@@ -255,10 +275,10 @@ export function Dashboard() {
                   className="w-full group hover:scale-105 transition-all duration-300"
                   disabled={!game.isAvailable}
                   onClick={() => {
-                    if (game.isAvailable) {
-                      // Only emoji-blast is available
-                      setCurrentScreen("game")
-                    }
+                    if (!game.isAvailable) return
+                    if (game.id === "emoji-blast") setCurrentScreen("game")
+                    if (game.id === "nexus-runner") setCurrentScreen("nexus-runner")
+                    if (game.id === "angry-qube") setCurrentScreen("angry-qube")
                   }}
                   variant={game.isAvailable ? "default" : "secondary"}
                 >
